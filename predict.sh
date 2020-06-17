@@ -1,3 +1,10 @@
+CHECKPOINT_PATH="$1"
+DATA_BIN_PATH="$2"
+FAIRSEQ_PATH="$3"
+SENTENCE_BPE_MODEL="$4"
+OUTPUT_FILE="$5"
+MAX_SENTENCES="$6"
+
 python3.7 "${FAIRSEQ_PATH}/generate.py" "${DATA_BIN_PATH}" \
   --path "${CHECKPOINT_PATH}" \
   --task translation_from_pretrained_bart \
