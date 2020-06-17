@@ -2,12 +2,13 @@ import os
 import json
 import argparse
 import copy
+import random
 
 from sentencepiece import SentencePieceProcessor
 
-from parsers import MODES
+from parsers import MODES, SEPARATOR
 
-def main(train_path, val_path, test_path, mode, subword_model_path, output_dir, max_source_subwords,
+def main(input_dir, subword_model_path, output_dir, max_source_subwords,
          max_target_subwords, source_suffix, target_suffix, lowercase=False):
     processor = SentencePieceProcessor()
     processor.Load(subword_model_path)
@@ -20,16 +21,30 @@ def main(train_path, val_path, test_path, mode, subword_model_path, output_dir, 
     test_source_file = os.path.join(output_dir, "test.{}".format(source_suffix))
     test_target_file = os.path.join(output_dir, "test.{}".format(target_suffix))
 
-    parse = MODES.get(mode, None)
-    assert parse is not None
+    dirs = list(os.listdir(input_dir))
+    tasks = []
+    for d in dirs:
+        if d.startswith("_"):
+            continue
+        mode = d.lower()
+        parse = MODES.get(mode, None)
+        assert parse is not None
+        tasks.append((os.path.join(input_dir, d), mode, parse))
 
-    files = ((train_path, train_source_file, train_target_file),
-             (val_path, val_source_file, val_target_file),
-             (test_path, test_source_file, test_target_file))
-    for path, source_file_name, target_file_name in files:
-        with open(source_file_name, "w") as source_file, open(target_file_name, "w") as target_file:
+    files = (("train.jsonl", train_source_file, train_target_file),
+             ("val.jsonl", val_source_file, val_target_file),
+             ("test.jsonl", test_source_file, test_target_file))
+    for orig_file_name, source_file_name, target_file_name in files:
+        records = []
+        for d, mode, parse in tasks:
+            if orig_file_name != "test.jsonl" and mode == "lidirus":
+                continue
+            elif orig_file_name == "test.jsonl" and mode == "lidirus":
+                path = os.path.join(d, "LiDiRuS.jsonl")
+            else:
+                path = os.path.join(d, orig_file_name)
             for record in parse(path):
-                source = record["source"]
+                source = mode + SEPARATOR + str(record["idx"]) + SEPARATOR + record["source"]
                 target = record["target"]
                 if lowercase:
                     source = source.lower()
@@ -40,15 +55,19 @@ def main(train_path, val_path, test_path, mode, subword_model_path, output_dir, 
                 target_subwords = processor.EncodeAsPieces(target)
                 if max_target_subwords:
                     target_subwords = target_subwords[:max_target_subwords]
-                source_file.write(" ".join(source_subwords) + "\n")
-                target_file.write((" ".join(target_subwords)) + "\n")
+                source = " ".join(source_subwords)
+                target = " ".join(target_subwords)
+                records.append((source, target))
+        random.shuffle(records)
+        with open(source_file_name, "w") as source_file, open(target_file_name, "w") as target_file:
+            for source, target in records:
+                source_file.write(source + "\n")
+                target_file.write(target + "\n")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train-path', type=str, required=True)
-    parser.add_argument('--val-path', type=str, required=True)
-    parser.add_argument('--test-path', type=str, required=True)
-    parser.add_argument('--mode', type=str, required=True, choices=MODES.keys())
+    parser.add_argument('--input-dir', type=str, required=True)
     parser.add_argument('--output-dir', type=str, required=True)
     parser.add_argument('--subword-model-path', type=str, required=True)
     parser.add_argument('--max-source-subwords', type=int, default=None)
